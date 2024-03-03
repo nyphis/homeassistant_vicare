@@ -16,3 +16,19 @@ set_vicare_mode:
             - "forcedReduced"
             - "heating"
             - "standby"
+
+set_preset_mode:
+  target:
+    entity:
+      integration: vicare
+      domain: climate
+  fields:
+    preset_mode:
+      required: true
+      selector:
+        select:
+          options:
+            - "comfort"
+            - "eco"
+            - "normal"
+            - "reduced"
