@@ -1,4 +1,5 @@
 """Config flow for imap integration."""
+
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -14,7 +15,13 @@ from homeassistant.config_entries import (
     ConfigFlowResult,
     OptionsFlowWithConfigEntry,
 )
-from homeassistant.const import CONF_PASSWORD, CONF_PORT, CONF_USERNAME, CONF_VERIFY_SSL
+from homeassistant.const import (
+    CONF_NAME,
+    CONF_PASSWORD,
+    CONF_PORT,
+    CONF_USERNAME,
+    CONF_VERIFY_SSL,
+)
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.data_entry_flow import AbortFlow
 from homeassistant.helpers import config_validation as cv
@@ -32,6 +39,7 @@ from .const import (
     CONF_CHARSET,
     CONF_CUSTOM_EVENT_DATA_TEMPLATE,
     CONF_ENABLE_PUSH,
+    CONF_EVENT_MESSAGE_DATA,
     CONF_FOLDER,
     CONF_MAX_MESSAGE_SIZE,
     CONF_SEARCH,
@@ -41,6 +49,7 @@ from .const import (
     DEFAULT_PORT,
     DOMAIN,
     MAX_MESSAGE_SIZE_LIMIT,
+    MESSAGE_DATA_OPTIONS,
 )
 from .coordinator import connect_to_server
 from .errors import InvalidAuth, InvalidFolder
@@ -54,6 +63,13 @@ CIPHER_SELECTOR = SelectSelector(
     )
 )
 TEMPLATE_SELECTOR = TemplateSelector(TemplateSelectorConfig())
+EVENT_MESSAGE_DATA_SELECTOR = SelectSelector(
+    SelectSelectorConfig(
+        options=MESSAGE_DATA_OPTIONS,
+        translation_key=CONF_EVENT_MESSAGE_DATA,
+        multiple=True,
+    )
+)
 
 CONFIG_SCHEMA = vol.Schema(
     {
@@ -64,6 +80,8 @@ CONFIG_SCHEMA = vol.Schema(
         vol.Optional(CONF_CHARSET, default="utf-8"): str,
         vol.Optional(CONF_FOLDER, default="INBOX"): str,
         vol.Optional(CONF_SEARCH, default="UnSeen UnDeleted"): str,
+        # The default for new entries is to not include text and headers
+        vol.Optional(CONF_EVENT_MESSAGE_DATA, default=[]): EVENT_MESSAGE_DATA_SELECTOR,
     }
 )
 CONFIG_SCHEMA_ADVANCED = {
@@ -77,6 +95,10 @@ OPTIONS_SCHEMA = vol.Schema(
     {
         vol.Optional(CONF_FOLDER, default="INBOX"): str,
         vol.Optional(CONF_SEARCH, default="UnSeen UnDeleted"): str,
+        # The default for older entries is to include text and headers
+        vol.Optional(
+            CONF_EVENT_MESSAGE_DATA, default=MESSAGE_DATA_OPTIONS
+        ): EVENT_MESSAGE_DATA_SELECTOR,
     }
 )
 
@@ -128,7 +150,6 @@ class IMAPConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle a config flow for imap."""
 
     VERSION = 1
-    _reauth_entry: ConfigEntry | None
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -161,9 +182,6 @@ class IMAPConfigFlow(ConfigFlow, domain=DOMAIN):
         self, entry_data: Mapping[str, Any]
     ) -> ConfigFlowResult:
         """Perform reauth upon an API authentication error."""
-        self._reauth_entry = self.hass.config_entries.async_get_entry(
-            self.context["entry_id"]
-        )
         return await self.async_step_reauth_confirm()
 
     async def async_step_reauth_confirm(
@@ -171,17 +189,16 @@ class IMAPConfigFlow(ConfigFlow, domain=DOMAIN):
     ) -> ConfigFlowResult:
         """Confirm reauth dialog."""
         errors = {}
-        assert self._reauth_entry
+        reauth_entry = self._get_reauth_entry()
         if user_input is not None:
-            user_input = {**self._reauth_entry.data, **user_input}
+            user_input = {**reauth_entry.data, **user_input}
             if not (errors := await validate_input(self.hass, user_input)):
-                return self.async_update_reload_and_abort(
-                    self._reauth_entry, data=user_input
-                )
+                return self.async_update_reload_and_abort(reauth_entry, data=user_input)
 
         return self.async_show_form(
             description_placeholders={
-                CONF_USERNAME: self._reauth_entry.data[CONF_USERNAME]
+                CONF_USERNAME: reauth_entry.data[CONF_USERNAME],
+                CONF_NAME: reauth_entry.title,
             },
             step_id="reauth_confirm",
             data_schema=vol.Schema(

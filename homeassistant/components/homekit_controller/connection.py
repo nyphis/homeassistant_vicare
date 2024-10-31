@@ -1,4 +1,5 @@
 """Helpers for managing a pairing with a HomeKit accessory or bridge."""
+
 from __future__ import annotations
 
 import asyncio
@@ -21,7 +22,7 @@ from aiohomekit.model import Accessories, Accessory, Transport
 from aiohomekit.model.characteristics import Characteristic, CharacteristicsTypes
 from aiohomekit.model.services import Service, ServicesTypes
 
-from homeassistant.components.thread.dataset_store import async_get_preferred_dataset
+from homeassistant.components.thread import async_get_preferred_dataset
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import ATTR_VIA_DEVICE, EVENT_HOMEASSISTANT_STARTED
 from homeassistant.core import CALLBACK_TYPE, CoreState, Event, HomeAssistant, callback
@@ -56,9 +57,9 @@ BLE_AVAILABILITY_CHECK_INTERVAL = 1800  # seconds
 
 _LOGGER = logging.getLogger(__name__)
 
-AddAccessoryCb = Callable[[Accessory], bool]
-AddServiceCb = Callable[[Service], bool]
-AddCharacteristicCb = Callable[[Characteristic], bool]
+type AddAccessoryCb = Callable[[Accessory], bool]
+type AddServiceCb = Callable[[Service], bool]
+type AddCharacteristicCb = Callable[[Characteristic], bool]
 
 
 def valid_serial_number(serial: str) -> bool:
@@ -109,7 +110,7 @@ class HKDevice:
         # A list of callbacks that turn HK characteristics into entities
         self.char_factories: list[AddCharacteristicCb] = []
 
-        # The platorms we have forwarded the config entry so far. If a new
+        # The platforms we have forwarded the config entry so far. If a new
         # accessory is added to a bridge we may have to load additional
         # platforms. We don't want to load all platforms up front if its just
         # a lightbulb. And we don't want to forward a config entry twice
@@ -144,6 +145,7 @@ class HKDevice:
             cooldown=DEBOUNCE_COOLDOWN,
             immediate=False,
             function=self.async_update,
+            background=True,
         )
 
         self._availability_callbacks: set[CALLBACK_TYPE] = set()
@@ -151,6 +153,8 @@ class HKDevice:
         self._subscriptions: dict[tuple[int, int], set[CALLBACK_TYPE]] = {}
         self._pending_subscribes: set[tuple[int, int]] = set()
         self._subscribe_timer: CALLBACK_TYPE | None = None
+        self._load_platforms_lock = asyncio.Lock()
+        self._full_update_requested: bool = False
 
     @property
     def entity_map(self) -> Accessories:
@@ -196,13 +200,19 @@ class HKDevice:
             self._subscribe_timer()
             self._subscribe_timer = None
 
-    async def _async_subscribe(self, _now: datetime) -> None:
+    @callback
+    def _async_subscribe(self, _now: datetime) -> None:
         """Subscribe to characteristics."""
         self._subscribe_timer = None
         if self._pending_subscribes:
             subscribes = self._pending_subscribes.copy()
             self._pending_subscribes.clear()
-            await self.pairing.subscribe(subscribes)
+            self.config_entry.async_create_task(
+                self.hass,
+                self.pairing.subscribe(subscribes),
+                name=f"hkc subscriptions {self.unique_id}",
+                eager_start=True,
+            )
 
     def remove_watchable_characteristics(
         self, characteristics: list[tuple[int, int]]
@@ -319,7 +329,8 @@ class HKDevice:
             )
             # BLE devices always get an RSSI sensor as well
             if "sensor" not in self.platforms:
-                await self._async_load_platforms({"sensor"})
+                async with self._load_platforms_lock:
+                    await self._async_load_platforms({"sensor"})
 
     @callback
     def _async_start_polling(self) -> None:
@@ -339,8 +350,11 @@ class HKDevice:
     @callback
     def _async_schedule_update(self, now: datetime) -> None:
         """Schedule an update."""
-        self.hass.async_create_task(
-            self._debounced_update.async_call(), eager_start=True
+        self.config_entry.async_create_background_task(
+            self.hass,
+            self._debounced_update.async_call(),
+            name=f"hkc {self.unique_id} alive poll",
+            eager_start=True,
         )
 
     async def async_add_new_entities(self) -> None:
@@ -372,6 +386,7 @@ class HKDevice:
             model=accessory.model,
             sw_version=accessory.firmware_revision,
             hw_version=accessory.hardware_revision,
+            serial_number=accessory.serial_number,
         )
 
         if accessory.aid != 1:
@@ -418,7 +433,7 @@ class HKDevice:
                 continue
 
             if self.config_entry.entry_id not in device.config_entries:
-                _LOGGER.info(
+                _LOGGER.warning(
                     (
                         "Found candidate device for %s:aid:%s, but owned by a different"
                         " config entry, skipping"
@@ -428,7 +443,7 @@ class HKDevice:
                 )
                 continue
 
-            _LOGGER.info(
+            _LOGGER.debug(
                 "Migrating device identifiers for %s:aid:%s",
                 self.unique_id,
                 accessory.aid,
@@ -692,8 +707,8 @@ class HKDevice:
 
     def process_config_changed(self, config_num: int) -> None:
         """Handle a config change notification from the pairing."""
-        self.hass.async_create_task(
-            self.async_update_new_accessories_state(), eager_start=True
+        self.config_entry.async_create_task(
+            self.hass, self.async_update_new_accessories_state(), eager_start=True
         )
 
     async def async_update_new_accessories_state(self) -> None:
@@ -792,6 +807,7 @@ class HKDevice:
 
     async def _async_load_platforms(self, platforms: set[str]) -> None:
         """Load a group of platforms."""
+        assert self._load_platforms_lock.locked(), "Must be called with lock held"
         if not (to_load := platforms - self.platforms):
             return
         self.platforms.update(to_load)
@@ -801,22 +817,23 @@ class HKDevice:
 
     async def async_load_platforms(self) -> None:
         """Load any platforms needed by this HomeKit device."""
-        to_load: set[str] = set()
-        for accessory in self.entity_map.accessories:
-            for service in accessory.services:
-                if service.type in HOMEKIT_ACCESSORY_DISPATCH:
-                    platform = HOMEKIT_ACCESSORY_DISPATCH[service.type]
-                    if platform not in self.platforms:
-                        to_load.add(platform)
-
-                for char in service.characteristics:
-                    if char.type in CHARACTERISTIC_PLATFORMS:
-                        platform = CHARACTERISTIC_PLATFORMS[char.type]
+        async with self._load_platforms_lock:
+            to_load: set[str] = set()
+            for accessory in self.entity_map.accessories:
+                for service in accessory.services:
+                    if service.type in HOMEKIT_ACCESSORY_DISPATCH:
+                        platform = HOMEKIT_ACCESSORY_DISPATCH[service.type]
                         if platform not in self.platforms:
                             to_load.add(platform)
 
-        if to_load:
-            await self._async_load_platforms(to_load)
+                    for char in service.characteristics:
+                        if char.type in CHARACTERISTIC_PLATFORMS:
+                            platform = CHARACTERISTIC_PLATFORMS[char.type]
+                            if platform not in self.platforms:
+                                to_load.add(platform)
+
+            if to_load:
+                await self._async_load_platforms(to_load)
 
     @callback
     def async_update_available_state(self, *_: Any) -> None:
@@ -825,11 +842,49 @@ class HKDevice:
 
     async def async_request_update(self, now: datetime | None = None) -> None:
         """Request an debounced update from the accessory."""
+        self._full_update_requested = True
         await self._debounced_update.async_call()
 
     async def async_update(self, now: datetime | None = None) -> None:
         """Poll state of all entities attached to this bridge/accessory."""
-        if not self.pollable_characteristics:
+        to_poll = self.pollable_characteristics
+        accessories = self.entity_map.accessories
+
+        if (
+            not self._full_update_requested
+            and len(accessories) == 1
+            and self.available
+            and not (to_poll - self.watchable_characteristics)
+            and self.pairing.is_available
+            and await self.pairing.controller.async_reachable(
+                self.unique_id, timeout=5.0
+            )
+        ):
+            # If its a single accessory and all chars are watchable,
+            # only poll the firmware version to keep the connection alive
+            # https://github.com/home-assistant/core/issues/123412
+            #
+            # Firmware revision is used here since iOS does this to keep camera
+            # connections alive, and the goal is to not regress
+            # https://github.com/home-assistant/core/issues/116143
+            # by polling characteristics that are not normally polled frequently
+            # and may not be tested by the device vendor.
+            #
+            _LOGGER.debug(
+                "Accessory is reachable, limiting poll to firmware version: %s",
+                self.unique_id,
+            )
+            first_accessory = accessories[0]
+            accessory_info = first_accessory.services.first(
+                service_type=ServicesTypes.ACCESSORY_INFORMATION
+            )
+            assert accessory_info is not None
+            firmware_iid = accessory_info[CharacteristicsTypes.FIRMWARE_REVISION].iid
+            to_poll = {(first_accessory.aid, firmware_iid)}
+
+        self._full_update_requested = False
+
+        if not to_poll:
             self.async_update_available_state()
             _LOGGER.debug(
                 "HomeKit connection not polling any characteristics: %s", self.unique_id
@@ -849,7 +904,7 @@ class HKDevice:
             return
 
         if self._polling_lock_warned:
-            _LOGGER.info(
+            _LOGGER.warning(
                 (
                     "HomeKit device no longer detecting back pressure - not"
                     " skipping poll: %s"
@@ -862,9 +917,7 @@ class HKDevice:
             _LOGGER.debug("Starting HomeKit device update: %s", self.unique_id)
 
             try:
-                new_values_dict = await self.get_characteristics(
-                    self.pollable_characteristics
-                )
+                new_values_dict = await self.get_characteristics(to_poll)
             except AccessoryNotFoundError:
                 # Not only did the connection fail, but also the accessory is not
                 # visible on the network.

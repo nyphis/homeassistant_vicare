@@ -1,4 +1,5 @@
 """The scene tests for the nexia platform."""
+
 from homeassistant.core import HomeAssistant
 
 from .util import async_init_integration
@@ -34,7 +35,7 @@ async def test_automation_scenes(hass: HomeAssistant) -> None:
     # Only test for a subset of attributes in case
     # HA changes the implementation and a new one appears
     assert all(
-        state.attributes[key] == expected_attributes[key] for key in expected_attributes
+        state.attributes[key] == value for key, value in expected_attributes.items()
     )
 
     state = hass.states.get("scene.power_outage")
@@ -54,7 +55,7 @@ async def test_automation_scenes(hass: HomeAssistant) -> None:
     # Only test for a subset of attributes in case
     # HA changes the implementation and a new one appears
     assert all(
-        state.attributes[key] == expected_attributes[key] for key in expected_attributes
+        state.attributes[key] == value for key, value in expected_attributes.items()
     )
 
     state = hass.states.get("scene.power_restored")
@@ -72,5 +73,5 @@ async def test_automation_scenes(hass: HomeAssistant) -> None:
     # Only test for a subset of attributes in case
     # HA changes the implementation and a new one appears
     assert all(
-        state.attributes[key] == expected_attributes[key] for key in expected_attributes
+        state.attributes[key] == value for key, value in expected_attributes.items()
     )

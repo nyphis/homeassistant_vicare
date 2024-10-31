@@ -1,6 +1,5 @@
 """Comelit integration."""
 
-
 from aiocomelit.const import BRIDGE
 
 from homeassistant.config_entries import ConfigEntry
@@ -20,6 +19,7 @@ BRIDGE_PLATFORMS = [
 ]
 VEDO_PLATFORMS = [
     Platform.ALARM_CONTROL_PANEL,
+    Platform.BINARY_SENSOR,
     Platform.SENSOR,
 ]
 

@@ -1,4 +1,5 @@
 """Config flow to configure the Android Debug Bridge integration."""
+
 from __future__ import annotations
 
 import logging
@@ -33,7 +34,7 @@ from .const import (
     CONF_APPS,
     CONF_EXCLUDE_UNNAMED_APPS,
     CONF_GET_SOURCES,
-    CONF_SCREENCAP,
+    CONF_SCREENCAP_INTERVAL,
     CONF_STATE_DETECTION_RULES,
     CONF_TURN_OFF_COMMAND,
     CONF_TURN_ON_COMMAND,
@@ -42,7 +43,7 @@ from .const import (
     DEFAULT_EXCLUDE_UNNAMED_APPS,
     DEFAULT_GET_SOURCES,
     DEFAULT_PORT,
-    DEFAULT_SCREENCAP,
+    DEFAULT_SCREENCAP_INTERVAL,
     DEVICE_CLASSES,
     DOMAIN,
     PROP_ETHMAC,
@@ -75,6 +76,7 @@ class AndroidTVFlowHandler(ConfigFlow, domain=DOMAIN):
     """Handle a config flow."""
 
     VERSION = 1
+    MINOR_VERSION = 2
 
     @callback
     def _show_setup_form(
@@ -118,7 +120,7 @@ class AndroidTVFlowHandler(ConfigFlow, domain=DOMAIN):
 
         try:
             aftv, error_message = await async_connect_androidtv(self.hass, user_input)
-        except Exception:  # pylint: disable=broad-except
+        except Exception:
             _LOGGER.exception(
                 "Unknown error connecting with Android device at %s",
                 user_input[CONF_HOST],
@@ -130,7 +132,7 @@ class AndroidTVFlowHandler(ConfigFlow, domain=DOMAIN):
             return RESULT_CONN_ERROR, None
 
         dev_prop = aftv.device_properties
-        _LOGGER.info(
+        _LOGGER.debug(
             "Android device at %s: %s = %r, %s = %r",
             user_input[CONF_HOST],
             PROP_ETHMAC,
@@ -234,7 +236,7 @@ class OptionsFlowHandler(OptionsFlowWithConfigEntry):
         apps = [SelectOptionDict(value=APPS_NEW_ID, label="Add new")] + [
             SelectOptionDict(value=k, label=v) for k, v in apps_list.items()
         ]
-        rules = [RULES_NEW_ID] + list(self._state_det_rules)
+        rules = [RULES_NEW_ID, *self._state_det_rules]
         options = self.options
 
         data_schema = vol.Schema(
@@ -252,10 +254,12 @@ class OptionsFlowHandler(OptionsFlowWithConfigEntry):
                         CONF_EXCLUDE_UNNAMED_APPS, DEFAULT_EXCLUDE_UNNAMED_APPS
                     ),
                 ): bool,
-                vol.Optional(
-                    CONF_SCREENCAP,
-                    default=options.get(CONF_SCREENCAP, DEFAULT_SCREENCAP),
-                ): bool,
+                vol.Required(
+                    CONF_SCREENCAP_INTERVAL,
+                    default=options.get(
+                        CONF_SCREENCAP_INTERVAL, DEFAULT_SCREENCAP_INTERVAL
+                    ),
+                ): vol.All(vol.Coerce(int), vol.Clamp(min=0, max=15)),
                 vol.Optional(
                     CONF_TURN_OFF_COMMAND,
                     description={

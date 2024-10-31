@@ -1,4 +1,5 @@
 """Config flow for the Home Assistant Green integration."""
+
 from __future__ import annotations
 
 import asyncio
@@ -12,7 +13,6 @@ from homeassistant.components.hassio import (
     HassioAPIError,
     async_get_green_settings,
     async_set_green_settings,
-    is_hassio,
 )
 from homeassistant.config_entries import (
     ConfigEntry,
@@ -22,6 +22,7 @@ from homeassistant.config_entries import (
 )
 from homeassistant.core import callback
 from homeassistant.helpers import selector
+from homeassistant.helpers.hassio import is_hassio
 
 from .const import DOMAIN
 
@@ -54,9 +55,6 @@ class HomeAssistantGreenConfigFlow(ConfigFlow, domain=DOMAIN):
         self, data: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Handle the initial step."""
-        if self._async_current_entries():
-            return self.async_abort(reason="single_instance_allowed")
-
         return self.async_create_entry(title="Home Assistant Green", data={})
 
 

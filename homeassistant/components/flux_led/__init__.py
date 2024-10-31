@@ -1,4 +1,5 @@
 """The Flux LED/MagicLight integration."""
+
 from __future__ import annotations
 
 from datetime import timedelta
@@ -135,7 +136,7 @@ async def _async_migrate_unique_ids(hass: HomeAssistant, entry: ConfigEntry) -> 
             new_unique_id = f"{unique_id}{entity_unique_id[len(unique_id):]}"
         else:
             return None
-        _LOGGER.info(
+        _LOGGER.debug(
             "Migrating unique_id from [%s] to [%s]",
             entity_unique_id,
             new_unique_id,

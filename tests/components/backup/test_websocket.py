@@ -1,9 +1,11 @@
 """Tests for the Backup integration."""
+
 from unittest.mock import patch
 
 import pytest
 from syrupy import SnapshotAssertion
 
+from homeassistant.components.backup.manager import Backup
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 
@@ -26,10 +28,10 @@ def sync_access_token_proxy(
 
 @pytest.mark.parametrize(
     "with_hassio",
-    (
+    [
         pytest.param(True, id="with_hassio"),
         pytest.param(False, id="without_hassio"),
-    ),
+    ],
 )
 async def test_info(
     hass: HomeAssistant,
@@ -44,7 +46,7 @@ async def test_info(
     await hass.async_block_till_done()
 
     with patch(
-        "homeassistant.components.backup.websocket.BackupManager.get_backups",
+        "homeassistant.components.backup.manager.BackupManager.async_get_backups",
         return_value={TEST_BACKUP.slug: TEST_BACKUP},
     ):
         await client.send_json_auto_id({"type": "backup/info"})
@@ -52,11 +54,46 @@ async def test_info(
 
 
 @pytest.mark.parametrize(
+    "backup_content",
+    [
+        pytest.param(TEST_BACKUP, id="with_backup_content"),
+        pytest.param(None, id="without_backup_content"),
+    ],
+)
+@pytest.mark.parametrize(
     "with_hassio",
-    (
+    [
         pytest.param(True, id="with_hassio"),
         pytest.param(False, id="without_hassio"),
-    ),
+    ],
+)
+async def test_details(
+    hass: HomeAssistant,
+    hass_ws_client: WebSocketGenerator,
+    snapshot: SnapshotAssertion,
+    with_hassio: bool,
+    backup_content: Backup | None,
+) -> None:
+    """Test getting backup info."""
+    await setup_backup_integration(hass, with_hassio=with_hassio)
+
+    client = await hass_ws_client(hass)
+    await hass.async_block_till_done()
+
+    with patch(
+        "homeassistant.components.backup.manager.BackupManager.async_get_backup",
+        return_value=backup_content,
+    ):
+        await client.send_json_auto_id({"type": "backup/details", "slug": "abc123"})
+        assert await client.receive_json() == snapshot
+
+
+@pytest.mark.parametrize(
+    "with_hassio",
+    [
+        pytest.param(True, id="with_hassio"),
+        pytest.param(False, id="without_hassio"),
+    ],
 )
 async def test_remove(
     hass: HomeAssistant,
@@ -71,7 +108,7 @@ async def test_remove(
     await hass.async_block_till_done()
 
     with patch(
-        "homeassistant.components.backup.websocket.BackupManager.remove_backup",
+        "homeassistant.components.backup.manager.BackupManager.async_remove_backup",
     ):
         await client.send_json_auto_id({"type": "backup/remove", "slug": "abc123"})
         assert snapshot == await client.receive_json()
@@ -79,10 +116,10 @@ async def test_remove(
 
 @pytest.mark.parametrize(
     "with_hassio",
-    (
+    [
         pytest.param(True, id="with_hassio"),
         pytest.param(False, id="without_hassio"),
-    ),
+    ],
 )
 async def test_generate(
     hass: HomeAssistant,
@@ -97,7 +134,7 @@ async def test_generate(
     await hass.async_block_till_done()
 
     with patch(
-        "homeassistant.components.backup.websocket.BackupManager.generate_backup",
+        "homeassistant.components.backup.manager.BackupManager.async_create_backup",
         return_value=TEST_BACKUP,
     ):
         await client.send_json_auto_id({"type": "backup/generate"})
@@ -110,16 +147,15 @@ async def test_generate(
 )
 @pytest.mark.parametrize(
     ("with_hassio"),
-    (
+    [
         pytest.param(True, id="with_hassio"),
         pytest.param(False, id="without_hassio"),
-    ),
+    ],
 )
 async def test_backup_end(
     hass: HomeAssistant,
     hass_ws_client: WebSocketGenerator,
     snapshot: SnapshotAssertion,
-    request: pytest.FixtureRequest,
     sync_access_token_proxy: str,
     *,
     access_token_fixture_name: str,
@@ -132,7 +168,7 @@ async def test_backup_end(
     await hass.async_block_till_done()
 
     with patch(
-        "homeassistant.components.backup.websocket.BackupManager.post_backup_actions",
+        "homeassistant.components.backup.manager.BackupManager.async_post_backup_actions",
     ):
         await client.send_json_auto_id({"type": "backup/end"})
         assert snapshot == await client.receive_json()
@@ -144,10 +180,10 @@ async def test_backup_end(
 )
 @pytest.mark.parametrize(
     ("with_hassio"),
-    (
+    [
         pytest.param(True, id="with_hassio"),
         pytest.param(False, id="without_hassio"),
-    ),
+    ],
 )
 async def test_backup_start(
     hass: HomeAssistant,
@@ -165,7 +201,7 @@ async def test_backup_start(
     await hass.async_block_till_done()
 
     with patch(
-        "homeassistant.components.backup.websocket.BackupManager.pre_backup_actions",
+        "homeassistant.components.backup.manager.BackupManager.async_pre_backup_actions",
     ):
         await client.send_json_auto_id({"type": "backup/start"})
         assert snapshot == await client.receive_json()
@@ -173,11 +209,11 @@ async def test_backup_start(
 
 @pytest.mark.parametrize(
     "exception",
-    (
+    [
         TimeoutError(),
         HomeAssistantError("Boom"),
         Exception("Boom"),
-    ),
+    ],
 )
 async def test_backup_end_excepion(
     hass: HomeAssistant,
@@ -193,7 +229,7 @@ async def test_backup_end_excepion(
     await hass.async_block_till_done()
 
     with patch(
-        "homeassistant.components.backup.websocket.BackupManager.post_backup_actions",
+        "homeassistant.components.backup.manager.BackupManager.async_post_backup_actions",
         side_effect=exception,
     ):
         await client.send_json_auto_id({"type": "backup/end"})
@@ -202,11 +238,11 @@ async def test_backup_end_excepion(
 
 @pytest.mark.parametrize(
     "exception",
-    (
+    [
         TimeoutError(),
         HomeAssistantError("Boom"),
         Exception("Boom"),
-    ),
+    ],
 )
 async def test_backup_start_excepion(
     hass: HomeAssistant,
@@ -222,7 +258,7 @@ async def test_backup_start_excepion(
     await hass.async_block_till_done()
 
     with patch(
-        "homeassistant.components.backup.websocket.BackupManager.pre_backup_actions",
+        "homeassistant.components.backup.manager.BackupManager.async_pre_backup_actions",
         side_effect=exception,
     ):
         await client.send_json_auto_id({"type": "backup/start"})

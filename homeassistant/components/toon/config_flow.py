@@ -1,4 +1,5 @@
 """Config flow to configure the Toon component."""
+
 from __future__ import annotations
 
 import logging
@@ -22,6 +23,7 @@ class ToonFlowHandler(AbstractOAuth2FlowHandler, domain=DOMAIN):
 
     agreements: list[Agreement]
     data: dict[str, Any]
+    migrate_entry: str | None = None
 
     @property
     def logger(self) -> logging.Logger:
@@ -47,7 +49,7 @@ class ToonFlowHandler(AbstractOAuth2FlowHandler, domain=DOMAIN):
         return await self.async_step_agreement()
 
     async def async_step_import(
-        self, config: dict[str, Any] | None = None
+        self, import_data: dict[str, Any] | None
     ) -> ConfigFlowResult:
         """Start a configuration flow based on imported data.
 
@@ -56,8 +58,8 @@ class ToonFlowHandler(AbstractOAuth2FlowHandler, domain=DOMAIN):
         the version 1 schema.
         """
 
-        if config is not None and CONF_MIGRATE in config:
-            self.context.update({CONF_MIGRATE: config[CONF_MIGRATE]})
+        if import_data is not None and CONF_MIGRATE in import_data:
+            self.migrate_entry = import_data[CONF_MIGRATE]
         else:
             await self._async_handle_discovery_without_unique_id()
 
@@ -87,8 +89,8 @@ class ToonFlowHandler(AbstractOAuth2FlowHandler, domain=DOMAIN):
         return await self._create_entry(self.agreements[agreement_index])
 
     async def _create_entry(self, agreement: Agreement) -> ConfigFlowResult:
-        if CONF_MIGRATE in self.context:
-            await self.hass.config_entries.async_remove(self.context[CONF_MIGRATE])
+        if self.migrate_entry:
+            await self.hass.config_entries.async_remove(self.migrate_entry)
 
         await self.async_set_unique_id(agreement.agreement_id)
         self._abort_if_unique_id_configured()

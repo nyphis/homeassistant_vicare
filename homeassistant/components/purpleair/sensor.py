@@ -1,4 +1,5 @@
 """Support for PurpleAir sensors."""
+
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -26,9 +27,9 @@ from homeassistant.const import (
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from . import PurpleAirEntity
 from .const import CONF_SENSOR_INDICES, DOMAIN
 from .coordinator import PurpleAirDataUpdateCoordinator
+from .entity import PurpleAirEntity
 
 CONCENTRATION_PARTICLES_PER_100_MILLILITERS = f"particles/100{UnitOfVolume.MILLILITERS}"
 

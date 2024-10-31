@@ -1,9 +1,10 @@
 """Config flow for myUplink."""
+
 from collections.abc import Mapping
 import logging
 from typing import Any
 
-from homeassistant.config_entries import ConfigEntry, ConfigFlowResult
+from homeassistant.config_entries import SOURCE_REAUTH, ConfigFlowResult
 from homeassistant.helpers import config_entry_oauth2_flow
 
 from .const import DOMAIN, OAUTH2_SCOPES
@@ -15,8 +16,6 @@ class OAuth2FlowHandler(
     """Config flow to handle myUplink OAuth2 authentication."""
 
     DOMAIN = DOMAIN
-
-    config_entry_reauth: ConfigEntry | None = None
 
     @property
     def logger(self) -> logging.Logger:
@@ -32,9 +31,6 @@ class OAuth2FlowHandler(
         self, entry_data: Mapping[str, Any]
     ) -> ConfigFlowResult:
         """Perform reauth upon an API authentication error."""
-        self.config_entry_reauth = self.hass.config_entries.async_get_entry(
-            self.context["entry_id"]
-        )
         return await self.async_step_reauth_confirm()
 
     async def async_step_reauth_confirm(
@@ -50,9 +46,8 @@ class OAuth2FlowHandler(
 
     async def async_oauth_create_entry(self, data: dict) -> ConfigFlowResult:
         """Create or update the config entry."""
-        if self.config_entry_reauth:
+        if self.source == SOURCE_REAUTH:
             return self.async_update_reload_and_abort(
-                self.config_entry_reauth,
-                data=data,
+                self._get_reauth_entry(), data=data
             )
         return await super().async_oauth_create_entry(data)

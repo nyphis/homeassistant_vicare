@@ -1,4 +1,5 @@
 """Slack platform for sensor component."""
+
 from __future__ import annotations
 
 from slack import WebClient
@@ -13,8 +14,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 import homeassistant.util.dt as dt_util
 
-from . import SlackEntity
 from .const import ATTR_SNOOZE, DOMAIN, SLACK_DATA
+from .entity import SlackEntity
 
 
 async def async_setup_entry(

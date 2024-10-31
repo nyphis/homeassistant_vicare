@@ -1,4 +1,5 @@
 """Switches for the Elexa Guardian integration."""
+
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Mapping
@@ -13,8 +14,9 @@ from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from . import GuardianData, ValveControllerEntity, ValveControllerEntityDescription
+from . import GuardianData
 from .const import API_VALVE_STATUS, API_WIFI_STATUS, DOMAIN
+from .entity import ValveControllerEntity, ValveControllerEntityDescription
 from .util import convert_exceptions_to_homeassistant_error
 from .valve import GuardianValveState
 

@@ -1,4 +1,5 @@
 """Support for Android IP Webcam sensors."""
+
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -12,30 +13,20 @@ from homeassistant.components.sensor import (
     SensorEntityDescription,
     SensorStateClass,
 )
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.typing import StateType
 
-from .const import DOMAIN
-from .coordinator import AndroidIPCamDataUpdateCoordinator
+from .coordinator import AndroidIPCamConfigEntry, AndroidIPCamDataUpdateCoordinator
 from .entity import AndroidIPCamBaseEntity
 
 
-@dataclass(frozen=True)
-class AndroidIPWebcamSensorEntityDescriptionMixin:
-    """Mixin for required keys."""
-
-    value_fn: Callable[[PyDroidIPCam], StateType]
-
-
-@dataclass(frozen=True)
-class AndroidIPWebcamSensorEntityDescription(
-    SensorEntityDescription, AndroidIPWebcamSensorEntityDescriptionMixin
-):
+@dataclass(frozen=True, kw_only=True)
+class AndroidIPWebcamSensorEntityDescription(SensorEntityDescription):
     """Entity description class for Android IP Webcam sensors."""
 
+    value_fn: Callable[[PyDroidIPCam], StateType]
     unit_fn: Callable[[PyDroidIPCam], str | None] = lambda _: None
 
 
@@ -127,19 +118,21 @@ SENSOR_TYPES: tuple[AndroidIPWebcamSensorEntityDescription, ...] = (
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    config_entry: ConfigEntry,
+    config_entry: AndroidIPCamConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the IP Webcam sensors from config entry."""
 
-    coordinator: AndroidIPCamDataUpdateCoordinator = hass.data[DOMAIN][
-        config_entry.entry_id
-    ]
+    coordinator = config_entry.runtime_data
     sensor_types = [
         sensor
         for sensor in SENSOR_TYPES
         if sensor.key
-        in coordinator.cam.enabled_sensors + ["audio_connections", "video_connections"]
+        in [
+            *coordinator.cam.enabled_sensors,
+            "audio_connections",
+            "video_connections",
+        ]
     ]
     async_add_entities(
         IPWebcamSensor(coordinator, description) for description in sensor_types

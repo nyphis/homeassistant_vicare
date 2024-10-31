@@ -1,4 +1,5 @@
 """Flow handler for Crownstone."""
+
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -176,7 +177,7 @@ class CrownstoneConfigFlowHandler(BaseCrownstoneFlowHandler, ConfigFlow, domain=
             elif auth_error.type == "LOGIN_FAILED_EMAIL_NOT_VERIFIED":
                 errors["base"] = "account_not_verified"
         except CrownstoneUnknownError:
-            errors["base"] = "unknown_error"
+            errors["base"] = "unknown"
 
         # show form again, with the errors
         if errors:

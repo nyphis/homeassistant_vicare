@@ -1,4 +1,5 @@
 """Sensors for the Elexa Guardian integration."""
+
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -24,12 +25,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.typing import StateType
 
-from . import (
-    GuardianData,
-    PairedSensorEntity,
-    ValveControllerEntity,
-    ValveControllerEntityDescription,
-)
+from . import GuardianData
 from .const import (
     API_SYSTEM_DIAGNOSTICS,
     API_SYSTEM_ONBOARD_SENSOR_STATUS,
@@ -37,6 +33,11 @@ from .const import (
     CONF_UID,
     DOMAIN,
     SIGNAL_PAIRED_SENSOR_COORDINATOR_ADDED,
+)
+from .entity import (
+    PairedSensorEntity,
+    ValveControllerEntity,
+    ValveControllerEntityDescription,
 )
 
 SENSOR_KIND_AVG_CURRENT = "average_current"

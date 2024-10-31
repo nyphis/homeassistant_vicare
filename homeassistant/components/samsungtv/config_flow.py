@@ -1,10 +1,11 @@
 """Config flow for Samsung TV."""
+
 from __future__ import annotations
 
 from collections.abc import Mapping
 from functools import partial
 import socket
-from typing import Any
+from typing import Any, Self
 from urllib.parse import urlparse
 
 import getmac
@@ -100,10 +101,10 @@ class SamsungTVConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle a Samsung TV config flow."""
 
     VERSION = 2
+    MINOR_VERSION = 2
 
     def __init__(self) -> None:
         """Initialize flow."""
-        self._reauth_entry: ConfigEntry | None = None
         self._host: str = ""
         self._mac: str | None = None
         self._udn: str | None = None
@@ -183,13 +184,13 @@ class SamsungTVConfigFlow(ConfigFlow, domain=DOMAIN):
         if self._model:
             updates[CONF_MODEL] = self._model
         if self._ssdp_rendering_control_location:
-            updates[
-                CONF_SSDP_RENDERING_CONTROL_LOCATION
-            ] = self._ssdp_rendering_control_location
+            updates[CONF_SSDP_RENDERING_CONTROL_LOCATION] = (
+                self._ssdp_rendering_control_location
+            )
         if self._ssdp_main_tv_agent_location:
-            updates[
-                CONF_SSDP_MAIN_TV_AGENT_LOCATION
-            ] = self._ssdp_main_tv_agent_location
+            updates[CONF_SSDP_MAIN_TV_AGENT_LOCATION] = (
+                self._ssdp_main_tv_agent_location
+            )
         self._abort_if_unique_id_configured(updates=updates, reload_on_update=False)
 
     async def _async_create_bridge(self) -> None:
@@ -387,13 +388,13 @@ class SamsungTVConfigFlow(ConfigFlow, domain=DOMAIN):
             or update_model
         ):
             if update_ssdp_rendering_control_location:
-                data[
-                    CONF_SSDP_RENDERING_CONTROL_LOCATION
-                ] = self._ssdp_rendering_control_location
+                data[CONF_SSDP_RENDERING_CONTROL_LOCATION] = (
+                    self._ssdp_rendering_control_location
+                )
             if update_ssdp_main_tv_agent_location:
-                data[
-                    CONF_SSDP_MAIN_TV_AGENT_LOCATION
-                ] = self._ssdp_main_tv_agent_location
+                data[CONF_SSDP_MAIN_TV_AGENT_LOCATION] = (
+                    self._ssdp_main_tv_agent_location
+                )
             if update_mac:
                 data[CONF_MAC] = self._mac
             if update_model:
@@ -423,10 +424,12 @@ class SamsungTVConfigFlow(ConfigFlow, domain=DOMAIN):
 
     @callback
     def _async_abort_if_host_already_in_progress(self) -> None:
-        self.context[CONF_HOST] = self._host
-        for progress in self._async_in_progress():
-            if progress.get("context", {}).get(CONF_HOST) == self._host:
-                raise AbortFlow("already_in_progress")
+        if self.hass.config_entries.flow.async_has_matching_flow(self):
+            raise AbortFlow("already_in_progress")
+
+    def is_matching(self, other_flow: Self) -> bool:
+        """Return True if other_flow is matching this flow."""
+        return other_flow._host == self._host  # noqa: SLF001
 
     @callback
     def _abort_if_manufacturer_is_not_samsung(self) -> None:
@@ -525,9 +528,6 @@ class SamsungTVConfigFlow(ConfigFlow, domain=DOMAIN):
         self, entry_data: Mapping[str, Any]
     ) -> ConfigFlowResult:
         """Handle configuration by re-auth."""
-        self._reauth_entry = self.hass.config_entries.async_get_entry(
-            self.context["entry_id"]
-        )
         if entry_data.get(CONF_MODEL) and entry_data.get(CONF_NAME):
             self._title = f"{entry_data[CONF_NAME]} ({entry_data[CONF_MODEL]})"
         else:
@@ -539,22 +539,23 @@ class SamsungTVConfigFlow(ConfigFlow, domain=DOMAIN):
     ) -> ConfigFlowResult:
         """Confirm reauth."""
         errors = {}
-        assert self._reauth_entry
-        method = self._reauth_entry.data[CONF_METHOD]
+
+        reauth_entry = self._get_reauth_entry()
+        method = reauth_entry.data[CONF_METHOD]
         if user_input is not None:
             if method == METHOD_ENCRYPTED_WEBSOCKET:
                 return await self.async_step_reauth_confirm_encrypted()
             bridge = SamsungTVBridge.get_bridge(
                 self.hass,
                 method,
-                self._reauth_entry.data[CONF_HOST],
+                reauth_entry.data[CONF_HOST],
             )
             result = await bridge.async_try_connect()
             if result == RESULT_SUCCESS:
-                new_data = dict(self._reauth_entry.data)
+                new_data = dict(reauth_entry.data)
                 new_data[CONF_TOKEN] = bridge.token
                 return self.async_update_reload_and_abort(
-                    self._reauth_entry,
+                    reauth_entry,
                     data=new_data,
                 )
             if result not in (RESULT_AUTH_MISSING, RESULT_CANNOT_CONNECT):
@@ -583,8 +584,9 @@ class SamsungTVConfigFlow(ConfigFlow, domain=DOMAIN):
     ) -> ConfigFlowResult:
         """Confirm reauth (encrypted method)."""
         errors = {}
-        assert self._reauth_entry
-        await self._async_start_encrypted_pairing(self._reauth_entry.data[CONF_HOST])
+
+        reauth_entry = self._get_reauth_entry()
+        await self._async_start_encrypted_pairing(reauth_entry.data[CONF_HOST])
         assert self._authenticator is not None
 
         if user_input is not None:
@@ -594,9 +596,8 @@ class SamsungTVConfigFlow(ConfigFlow, domain=DOMAIN):
                 and (session_id := await self._authenticator.get_session_id_and_close())
             ):
                 return self.async_update_reload_and_abort(
-                    self._reauth_entry,
-                    data={
-                        **self._reauth_entry.data,
+                    reauth_entry,
+                    data_updates={
                         CONF_TOKEN: token,
                         CONF_SESSION_ID: session_id,
                     },

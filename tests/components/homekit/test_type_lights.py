@@ -1,4 +1,5 @@
 """Test different accessory types: Lights."""
+
 from datetime import timedelta
 
 from pyhap.const import HAP_REPR_AID, HAP_REPR_CHARS, HAP_REPR_IID, HAP_REPR_VALUE
@@ -26,7 +27,7 @@ from homeassistant.components.light import (
     ATTR_RGBWW_COLOR,
     ATTR_SUPPORTED_COLOR_MODES,
     ATTR_WHITE,
-    DOMAIN,
+    DOMAIN as LIGHT_DOMAIN,
     ColorMode,
 )
 from homeassistant.const import (
@@ -38,21 +39,21 @@ from homeassistant.const import (
     STATE_ON,
     STATE_UNKNOWN,
 )
-from homeassistant.core import CoreState, HomeAssistant
+from homeassistant.core import CoreState, Event, HomeAssistant
 from homeassistant.helpers import entity_registry as er
 import homeassistant.util.dt as dt_util
 
 from tests.common import async_fire_time_changed, async_mock_service
 
 
-async def _wait_for_light_coalesce(hass):
+async def _wait_for_light_coalesce(hass: HomeAssistant) -> None:
     async_fire_time_changed(
         hass, dt_util.utcnow() + timedelta(seconds=CHANGE_COALESCE_TIME_WINDOW)
     )
     await hass.async_block_till_done()
 
 
-async def test_light_basic(hass: HomeAssistant, hk_driver, events) -> None:
+async def test_light_basic(hass: HomeAssistant, hk_driver, events: list[Event]) -> None:
     """Test light with char state."""
     entity_id = "light.demo"
 
@@ -82,8 +83,8 @@ async def test_light_basic(hass: HomeAssistant, hk_driver, events) -> None:
     assert acc.char_on.value == 0
 
     # Set from HomeKit
-    call_turn_on = async_mock_service(hass, DOMAIN, "turn_on")
-    call_turn_off = async_mock_service(hass, DOMAIN, "turn_off")
+    call_turn_on = async_mock_service(hass, LIGHT_DOMAIN, "turn_on")
+    call_turn_off = async_mock_service(hass, LIGHT_DOMAIN, "turn_off")
 
     char_on_iid = acc.char_on.to_HAP()[HAP_REPR_IID]
 
@@ -126,7 +127,7 @@ async def test_light_basic(hass: HomeAssistant, hk_driver, events) -> None:
     [[ColorMode.BRIGHTNESS], [ColorMode.HS], [ColorMode.COLOR_TEMP]],
 )
 async def test_light_brightness(
-    hass: HomeAssistant, hk_driver, events, supported_color_modes
+    hass: HomeAssistant, hk_driver, events: list[Event], supported_color_modes
 ) -> None:
     """Test light with brightness."""
     entity_id = "light.demo"
@@ -159,8 +160,8 @@ async def test_light_brightness(
     assert acc.char_brightness.value == 40
 
     # Set from HomeKit
-    call_turn_on = async_mock_service(hass, DOMAIN, "turn_on")
-    call_turn_off = async_mock_service(hass, DOMAIN, "turn_off")
+    call_turn_on = async_mock_service(hass, LIGHT_DOMAIN, "turn_on")
+    call_turn_off = async_mock_service(hass, LIGHT_DOMAIN, "turn_off")
 
     hk_driver.set_characteristics(
         {
@@ -225,6 +226,24 @@ async def test_light_brightness(
     assert len(events) == 3
     assert events[-1].data[ATTR_VALUE] == f"Set state to 0, brightness at 0{PERCENTAGE}"
 
+    hk_driver.set_characteristics(
+        {
+            HAP_REPR_CHARS: [
+                {
+                    HAP_REPR_AID: acc.aid,
+                    HAP_REPR_IID: char_brightness_iid,
+                    HAP_REPR_VALUE: 0,
+                },
+            ]
+        },
+        "mock_addr",
+    )
+    await _wait_for_light_coalesce(hass)
+    assert call_turn_off
+    assert call_turn_off[0].data[ATTR_ENTITY_ID] == entity_id
+    assert len(events) == 4
+    assert events[-1].data[ATTR_VALUE] == f"Set state to 0, brightness at 0{PERCENTAGE}"
+
     # 0 is a special case for homekit, see "Handle Brightness"
     # in update_state
     hass.states.async_set(
@@ -273,7 +292,9 @@ async def test_light_brightness(
     assert acc.char_brightness.value == 1
 
 
-async def test_light_color_temperature(hass: HomeAssistant, hk_driver, events) -> None:
+async def test_light_color_temperature(
+    hass: HomeAssistant, hk_driver, events: list[Event]
+) -> None:
     """Test light with color temperature."""
     entity_id = "light.demo"
 
@@ -293,7 +314,7 @@ async def test_light_color_temperature(hass: HomeAssistant, hk_driver, events) -
     assert acc.char_color_temp.value == 190
 
     # Set from HomeKit
-    call_turn_on = async_mock_service(hass, DOMAIN, "turn_on")
+    call_turn_on = async_mock_service(hass, LIGHT_DOMAIN, "turn_on")
 
     char_color_temp_iid = acc.char_color_temp.to_HAP()[HAP_REPR_IID]
 
@@ -322,7 +343,7 @@ async def test_light_color_temperature(hass: HomeAssistant, hk_driver, events) -
     [["color_temp", "hs"], ["color_temp", "rgb"], ["color_temp", "xy"]],
 )
 async def test_light_color_temperature_and_rgb_color(
-    hass: HomeAssistant, hk_driver, events, supported_color_modes
+    hass: HomeAssistant, hk_driver, events: list[Event], supported_color_modes
 ) -> None:
     """Test light with color temperature and rgb color not exposing temperature."""
     entity_id = "light.demo"
@@ -369,7 +390,7 @@ async def test_light_color_temperature_and_rgb_color(
     char_color_temp_iid = acc.char_color_temp.to_HAP()[HAP_REPR_IID]
 
     # Set from HomeKit
-    call_turn_on = async_mock_service(hass, DOMAIN, "turn_on")
+    call_turn_on = async_mock_service(hass, LIGHT_DOMAIN, "turn_on")
 
     hk_driver.set_characteristics(
         {
@@ -523,7 +544,7 @@ async def test_light_color_temperature_and_rgb_color(
     "supported_color_modes", [[ColorMode.HS], [ColorMode.RGB], [ColorMode.XY]]
 )
 async def test_light_rgb_color(
-    hass: HomeAssistant, hk_driver, events, supported_color_modes
+    hass: HomeAssistant, hk_driver, events: list[Event], supported_color_modes
 ) -> None:
     """Test light with rgb_color."""
     entity_id = "light.demo"
@@ -546,7 +567,7 @@ async def test_light_rgb_color(
     assert acc.char_saturation.value == 90
 
     # Set from HomeKit
-    call_turn_on = async_mock_service(hass, DOMAIN, "turn_on")
+    call_turn_on = async_mock_service(hass, LIGHT_DOMAIN, "turn_on")
 
     char_hue_iid = acc.char_hue.to_HAP()[HAP_REPR_IID]
     char_saturation_iid = acc.char_saturation.to_HAP()[HAP_REPR_IID]
@@ -577,7 +598,7 @@ async def test_light_rgb_color(
 
 
 async def test_light_restore(
-    hass: HomeAssistant, entity_registry: er.EntityRegistry, hk_driver, events
+    hass: HomeAssistant, entity_registry: er.EntityRegistry, hk_driver
 ) -> None:
     """Test setting up an entity from state in the event registry."""
     hass.set_state(CoreState.not_running)
@@ -614,7 +635,7 @@ async def test_light_restore(
 @pytest.mark.parametrize(
     ("supported_color_modes", "state_props", "turn_on_props_with_brightness"),
     [
-        [
+        (
             [ColorMode.COLOR_TEMP, ColorMode.RGBW],
             {
                 ATTR_RGBW_COLOR: (128, 50, 0, 255),
@@ -624,8 +645,8 @@ async def test_light_restore(
                 ATTR_COLOR_MODE: ColorMode.RGBW,
             },
             {ATTR_HS_COLOR: (145, 75), ATTR_BRIGHTNESS_PCT: 25},
-        ],
-        [
+        ),
+        (
             [ColorMode.COLOR_TEMP, ColorMode.RGBWW],
             {
                 ATTR_RGBWW_COLOR: (128, 50, 0, 255, 255),
@@ -635,13 +656,13 @@ async def test_light_restore(
                 ATTR_COLOR_MODE: ColorMode.RGBWW,
             },
             {ATTR_HS_COLOR: (145, 75), ATTR_BRIGHTNESS_PCT: 25},
-        ],
+        ),
     ],
 )
 async def test_light_rgb_with_color_temp(
     hass: HomeAssistant,
     hk_driver,
-    events,
+    events: list[Event],
     supported_color_modes,
     state_props,
     turn_on_props_with_brightness,
@@ -668,7 +689,7 @@ async def test_light_rgb_with_color_temp(
     assert acc.char_brightness.value == 100
 
     # Set from HomeKit
-    call_turn_on = async_mock_service(hass, DOMAIN, "turn_on")
+    call_turn_on = async_mock_service(hass, LIGHT_DOMAIN, "turn_on")
 
     char_hue_iid = acc.char_hue.to_HAP()[HAP_REPR_IID]
     char_saturation_iid = acc.char_saturation.to_HAP()[HAP_REPR_IID]
@@ -734,7 +755,7 @@ async def test_light_rgb_with_color_temp(
 @pytest.mark.parametrize(
     ("supported_color_modes", "state_props", "turn_on_props_with_brightness"),
     [
-        [
+        (
             [ColorMode.RGBW],
             {
                 ATTR_RGBW_COLOR: (128, 50, 0, 255),
@@ -744,8 +765,8 @@ async def test_light_rgb_with_color_temp(
                 ATTR_COLOR_MODE: ColorMode.RGBW,
             },
             {ATTR_RGBW_COLOR: (0, 0, 0, 191)},
-        ],
-        [
+        ),
+        (
             [ColorMode.RGBWW],
             {
                 ATTR_RGBWW_COLOR: (128, 50, 0, 255, 255),
@@ -755,13 +776,13 @@ async def test_light_rgb_with_color_temp(
                 ATTR_COLOR_MODE: ColorMode.RGBWW,
             },
             {ATTR_RGBWW_COLOR: (0, 0, 0, 165, 26)},
-        ],
+        ),
     ],
 )
 async def test_light_rgbwx_with_color_temp_and_brightness(
     hass: HomeAssistant,
     hk_driver,
-    events,
+    events: list[Event],
     supported_color_modes,
     state_props,
     turn_on_props_with_brightness,
@@ -788,7 +809,7 @@ async def test_light_rgbwx_with_color_temp_and_brightness(
     assert acc.char_brightness.value == 100
 
     # Set from HomeKit
-    call_turn_on = async_mock_service(hass, DOMAIN, "turn_on")
+    call_turn_on = async_mock_service(hass, LIGHT_DOMAIN, "turn_on")
 
     char_color_temp_iid = acc.char_color_temp.to_HAP()[HAP_REPR_IID]
     char_brightness_iid = acc.char_brightness.to_HAP()[HAP_REPR_IID]
@@ -823,7 +844,7 @@ async def test_light_rgbwx_with_color_temp_and_brightness(
 async def test_light_rgb_or_w_lights(
     hass: HomeAssistant,
     hk_driver,
-    events,
+    events: list[Event],
 ) -> None:
     """Test lights with RGB or W lights."""
     entity_id = "light.demo"
@@ -855,7 +876,7 @@ async def test_light_rgb_or_w_lights(
     assert acc.char_color_temp.value == 153
 
     # Set from HomeKit
-    call_turn_on = async_mock_service(hass, DOMAIN, "turn_on")
+    call_turn_on = async_mock_service(hass, LIGHT_DOMAIN, "turn_on")
 
     char_hue_iid = acc.char_hue.to_HAP()[HAP_REPR_IID]
     char_saturation_iid = acc.char_saturation.to_HAP()[HAP_REPR_IID]
@@ -931,7 +952,7 @@ async def test_light_rgb_or_w_lights(
 @pytest.mark.parametrize(
     ("supported_color_modes", "state_props"),
     [
-        [
+        (
             [ColorMode.COLOR_TEMP, ColorMode.RGBW],
             {
                 ATTR_RGBW_COLOR: (128, 50, 0, 255),
@@ -940,8 +961,8 @@ async def test_light_rgb_or_w_lights(
                 ATTR_BRIGHTNESS: 255,
                 ATTR_COLOR_MODE: ColorMode.RGBW,
             },
-        ],
-        [
+        ),
+        (
             [ColorMode.COLOR_TEMP, ColorMode.RGBWW],
             {
                 ATTR_RGBWW_COLOR: (128, 50, 0, 255, 255),
@@ -950,13 +971,13 @@ async def test_light_rgb_or_w_lights(
                 ATTR_BRIGHTNESS: 255,
                 ATTR_COLOR_MODE: ColorMode.RGBWW,
             },
-        ],
+        ),
     ],
 )
 async def test_light_rgb_with_white_switch_to_temp(
     hass: HomeAssistant,
     hk_driver,
-    events,
+    events: list[Event],
     supported_color_modes,
     state_props,
 ) -> None:
@@ -982,7 +1003,7 @@ async def test_light_rgb_with_white_switch_to_temp(
     assert acc.char_brightness.value == 100
 
     # Set from HomeKit
-    call_turn_on = async_mock_service(hass, DOMAIN, "turn_on")
+    call_turn_on = async_mock_service(hass, LIGHT_DOMAIN, "turn_on")
 
     char_hue_iid = acc.char_hue.to_HAP()[HAP_REPR_IID]
     char_saturation_iid = acc.char_saturation.to_HAP()[HAP_REPR_IID]
@@ -1033,11 +1054,7 @@ async def test_light_rgb_with_white_switch_to_temp(
     assert acc.char_brightness.value == 100
 
 
-async def test_light_rgb_with_hs_color_none(
-    hass: HomeAssistant,
-    hk_driver,
-    events,
-) -> None:
+async def test_light_rgb_with_hs_color_none(hass: HomeAssistant, hk_driver) -> None:
     """Test lights hs color set to None."""
     entity_id = "light.demo"
 
@@ -1070,7 +1087,7 @@ async def test_light_rgb_with_hs_color_none(
 async def test_light_rgbww_with_color_temp_conversion(
     hass: HomeAssistant,
     hk_driver,
-    events,
+    events: list[Event],
 ) -> None:
     """Test lights with RGBWW convert color temp as expected."""
     entity_id = "light.demo"
@@ -1101,7 +1118,7 @@ async def test_light_rgbww_with_color_temp_conversion(
     assert acc.char_brightness.value == 100
 
     # Set from HomeKit
-    call_turn_on = async_mock_service(hass, DOMAIN, "turn_on")
+    call_turn_on = async_mock_service(hass, LIGHT_DOMAIN, "turn_on")
 
     char_hue_iid = acc.char_hue.to_HAP()[HAP_REPR_IID]
     char_saturation_iid = acc.char_saturation.to_HAP()[HAP_REPR_IID]
@@ -1191,7 +1208,7 @@ async def test_light_rgbww_with_color_temp_conversion(
 async def test_light_rgbw_with_color_temp_conversion(
     hass: HomeAssistant,
     hk_driver,
-    events,
+    events: list[Event],
 ) -> None:
     """Test lights with RGBW convert color temp as expected."""
     entity_id = "light.demo"
@@ -1222,7 +1239,7 @@ async def test_light_rgbw_with_color_temp_conversion(
     assert acc.char_brightness.value == 100
 
     # Set from HomeKit
-    call_turn_on = async_mock_service(hass, DOMAIN, "turn_on")
+    call_turn_on = async_mock_service(hass, LIGHT_DOMAIN, "turn_on")
 
     char_hue_iid = acc.char_hue.to_HAP()[HAP_REPR_IID]
     char_saturation_iid = acc.char_saturation.to_HAP()[HAP_REPR_IID]
@@ -1279,7 +1296,7 @@ async def test_light_rgbw_with_color_temp_conversion(
 
 
 async def test_light_set_brightness_and_color(
-    hass: HomeAssistant, hk_driver, events
+    hass: HomeAssistant, hk_driver, events: list[Event]
 ) -> None:
     """Test light with all chars in one go."""
     entity_id = "light.demo"
@@ -1326,7 +1343,7 @@ async def test_light_set_brightness_and_color(
     assert acc.char_saturation.value == 9
 
     # Set from HomeKit
-    call_turn_on = async_mock_service(hass, DOMAIN, "turn_on")
+    call_turn_on = async_mock_service(hass, LIGHT_DOMAIN, "turn_on")
 
     hk_driver.set_characteristics(
         {
@@ -1364,7 +1381,7 @@ async def test_light_set_brightness_and_color(
     )
 
 
-async def test_light_min_max_mireds(hass: HomeAssistant, hk_driver, events) -> None:
+async def test_light_min_max_mireds(hass: HomeAssistant, hk_driver) -> None:
     """Test mireds are forced to ints."""
     entity_id = "light.demo"
 
@@ -1375,17 +1392,17 @@ async def test_light_min_max_mireds(hass: HomeAssistant, hk_driver, events) -> N
             ATTR_SUPPORTED_COLOR_MODES: [ColorMode.COLOR_TEMP],
             ATTR_BRIGHTNESS: 255,
             ATTR_MAX_MIREDS: 500.5,
-            ATTR_MIN_MIREDS: 100.5,
+            ATTR_MIN_MIREDS: 153.5,
         },
     )
     await hass.async_block_till_done()
     acc = Light(hass, hk_driver, "Light", entity_id, 1, None)
-    acc.char_color_temp.properties["maxValue"] == 500
-    acc.char_color_temp.properties["minValue"] == 100
+    assert acc.char_color_temp.properties["maxValue"] == 500
+    assert acc.char_color_temp.properties["minValue"] == 153
 
 
 async def test_light_set_brightness_and_color_temp(
-    hass: HomeAssistant, hk_driver, events
+    hass: HomeAssistant, hk_driver, events: list[Event]
 ) -> None:
     """Test light with all chars in one go."""
     entity_id = "light.demo"
@@ -1433,7 +1450,7 @@ async def test_light_set_brightness_and_color_temp(
     assert acc.char_color_temp.value == 224
 
     # Set from HomeKit
-    call_turn_on = async_mock_service(hass, DOMAIN, "turn_on")
+    call_turn_on = async_mock_service(hass, LIGHT_DOMAIN, "turn_on")
 
     hk_driver.set_characteristics(
         {

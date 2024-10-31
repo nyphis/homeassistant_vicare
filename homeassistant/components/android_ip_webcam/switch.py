@@ -1,4 +1,5 @@
 """Support for Android IP Webcam settings."""
+
 from __future__ import annotations
 
 from collections.abc import Callable, Coroutine
@@ -8,29 +9,20 @@ from typing import Any
 from pydroid_ipcam import PyDroidIPCam
 
 from homeassistant.components.switch import SwitchEntity, SwitchEntityDescription
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN
-from .coordinator import AndroidIPCamDataUpdateCoordinator
+from .coordinator import AndroidIPCamConfigEntry, AndroidIPCamDataUpdateCoordinator
 from .entity import AndroidIPCamBaseEntity
 
 
-@dataclass(frozen=True)
-class AndroidIPWebcamSwitchEntityDescriptionMixin:
-    """Mixin for required keys."""
+@dataclass(frozen=True, kw_only=True)
+class AndroidIPWebcamSwitchEntityDescription(SwitchEntityDescription):
+    """Entity description class for Android IP Webcam switches."""
 
     on_func: Callable[[PyDroidIPCam], Coroutine[Any, Any, bool]]
     off_func: Callable[[PyDroidIPCam], Coroutine[Any, Any, bool]]
-
-
-@dataclass(frozen=True)
-class AndroidIPWebcamSwitchEntityDescription(
-    SwitchEntityDescription, AndroidIPWebcamSwitchEntityDescriptionMixin
-):
-    """Entity description class for Android IP Webcam switches."""
 
 
 SWITCH_TYPES: tuple[AndroidIPWebcamSwitchEntityDescription, ...] = (
@@ -119,14 +111,12 @@ SWITCH_TYPES: tuple[AndroidIPWebcamSwitchEntityDescription, ...] = (
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    config_entry: ConfigEntry,
+    config_entry: AndroidIPCamConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the IP Webcam switches from config entry."""
 
-    coordinator: AndroidIPCamDataUpdateCoordinator = hass.data[DOMAIN][
-        config_entry.entry_id
-    ]
+    coordinator = config_entry.runtime_data
     switch_types = [
         switch
         for switch in SWITCH_TYPES

@@ -1,4 +1,5 @@
 """Config flow for Steam integration."""
+
 from __future__ import annotations
 
 from collections.abc import Iterator, Mapping
@@ -9,7 +10,6 @@ import voluptuous as vol
 
 from homeassistant.config_entries import (
     SOURCE_REAUTH,
-    ConfigEntry,
     ConfigFlow,
     ConfigFlowResult,
     OptionsFlow,
@@ -18,6 +18,7 @@ from homeassistant.const import CONF_API_KEY, Platform
 from homeassistant.core import callback
 from homeassistant.helpers import config_validation as cv, entity_registry as er
 
+from . import SteamConfigEntry
 from .const import CONF_ACCOUNT, CONF_ACCOUNTS, DOMAIN, LOGGER, PLACEHOLDERS
 
 # To avoid too long request URIs, the amount of ids to request is limited
@@ -35,14 +36,10 @@ def validate_input(user_input: dict[str, str]) -> dict[str, str | int]:
 class SteamFlowHandler(ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Steam."""
 
-    def __init__(self) -> None:
-        """Initialize the flow."""
-        self.entry: ConfigEntry | None = None
-
     @staticmethod
     @callback
     def async_get_options_flow(
-        config_entry: ConfigEntry,
+        config_entry: SteamConfigEntry,
     ) -> OptionsFlow:
         """Get the options flow for this handler."""
         return SteamOptionsFlowHandler(config_entry)
@@ -52,8 +49,8 @@ class SteamFlowHandler(ConfigFlow, domain=DOMAIN):
     ) -> ConfigFlowResult:
         """Handle a flow initiated by the user."""
         errors = {}
-        if user_input is None and self.entry:
-            user_input = {CONF_ACCOUNT: self.entry.data[CONF_ACCOUNT]}
+        if user_input is None and self.source == SOURCE_REAUTH:
+            user_input = {CONF_ACCOUNT: self._get_reauth_entry().data[CONF_ACCOUNT]}
         elif user_input is not None:
             try:
                 res = await self.hass.async_add_executor_job(validate_input, user_input)
@@ -65,7 +62,7 @@ class SteamFlowHandler(ConfigFlow, domain=DOMAIN):
                 errors["base"] = "cannot_connect"
                 if "403" in str(ex):
                     errors["base"] = "invalid_auth"
-            except Exception as ex:  # pylint:disable=broad-except
+            except Exception as ex:  # noqa: BLE001
                 LOGGER.exception("Unknown exception: %s", ex)
                 errors["base"] = "unknown"
             if not errors:
@@ -101,8 +98,6 @@ class SteamFlowHandler(ConfigFlow, domain=DOMAIN):
         self, entry_data: Mapping[str, Any]
     ) -> ConfigFlowResult:
         """Handle a reauthorization flow request."""
-        self.entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
-
         return await self.async_step_reauth_confirm()
 
     async def async_step_reauth_confirm(
@@ -126,7 +121,7 @@ def _batch_ids(ids: list[str]) -> Iterator[list[str]]:
 class SteamOptionsFlowHandler(OptionsFlow):
     """Handle Steam client options."""
 
-    def __init__(self, entry: ConfigEntry) -> None:
+    def __init__(self, entry: SteamConfigEntry) -> None:
         """Initialize options flow."""
         self.entry = entry
         self.options = dict(entry.options)

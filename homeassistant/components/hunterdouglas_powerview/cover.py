@@ -1,9 +1,8 @@
 """Support for hunter douglas shades."""
+
 from __future__ import annotations
 
-import asyncio
 from collections.abc import Callable, Iterable
-from contextlib import suppress
 from dataclasses import replace
 from datetime import datetime, timedelta
 import logging
@@ -26,15 +25,14 @@ from homeassistant.components.cover import (
     CoverEntity,
     CoverEntityFeature,
 )
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_call_later
 
-from .const import DOMAIN, STATE_ATTRIBUTE_ROOM_NAME
+from .const import STATE_ATTRIBUTE_ROOM_NAME
 from .coordinator import PowerviewShadeUpdateCoordinator
 from .entity import ShadeEntity
-from .model import PowerviewDeviceInfo, PowerviewEntryData
+from .model import PowerviewConfigEntry, PowerviewDeviceInfo
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -50,12 +48,13 @@ SCAN_INTERVAL = timedelta(minutes=10)
 
 
 async def async_setup_entry(
-    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
+    hass: HomeAssistant,
+    entry: PowerviewConfigEntry,
+    async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the hunter douglas shades."""
-
-    pv_entry: PowerviewEntryData = hass.data[DOMAIN][entry.entry_id]
-    coordinator: PowerviewShadeUpdateCoordinator = pv_entry.coordinator
+    pv_entry = entry.runtime_data
+    coordinator = pv_entry.coordinator
 
     async def _async_initial_refresh() -> None:
         """Force position refresh shortly after adding.
@@ -67,15 +66,12 @@ async def async_setup_entry(
         """
 
         for shade in pv_entry.shade_data.values():
-            with suppress(TimeoutError):
-                # hold off to avoid spamming the hub
-                async with asyncio.timeout(10):
-                    _LOGGER.debug("Initial refresh of shade: %s", shade.name)
-                    await shade.refresh()
+            _LOGGER.debug("Initial refresh of shade: %s", shade.name)
+            async with coordinator.radio_operation_lock:
+                await shade.refresh(suppress_timeout=True)  # default 15 second timeout
 
     entities: list[ShadeEntity] = []
     for shade in pv_entry.shade_data.values():
-        coordinator.data.update_shade_position(shade.id, shade.current_position)
         room_name = getattr(pv_entry.room_data.get(shade.room_id), ATTR_NAME, "")
         entities.extend(
             create_powerview_shade_entity(
@@ -212,7 +208,8 @@ class PowerViewShadeBase(ShadeEntity, CoverEntity):
     async def _async_execute_move(self, move: ShadePosition) -> None:
         """Execute a move that can affect multiple positions."""
         _LOGGER.debug("Move request %s: %s", self.name, move)
-        response = await self._shade.move(move)
+        async with self.coordinator.radio_operation_lock:
+            response = await self._shade.move(move)
         _LOGGER.debug("Move response %s: %s", self.name, response)
 
         # Process the response from the hub (including new positions)
@@ -323,9 +320,10 @@ class PowerViewShadeBase(ShadeEntity, CoverEntity):
             # error if are already have one in flight
             return
         # suppress timeouts caused by hub nightly reboot
-        with suppress(TimeoutError):
-            async with asyncio.timeout(10):
-                await self._shade.refresh()
+        async with self.coordinator.radio_operation_lock:
+            await self._shade.refresh(
+                suppress_timeout=True
+            )  # default 15 second timeout
         _LOGGER.debug("Process update %s: %s", self.name, self._shade.current_position)
         self._async_update_shade_data(self._shade.current_position)
 
@@ -519,6 +517,22 @@ class PowerViewShadeTiltOnly(PowerViewShadeWithTiltBase):
             self._attr_supported_features |= CoverEntityFeature.STOP_TILT
         self._max_tilt = self._shade.shade_limits.tilt_max
 
+    @property
+    def current_cover_position(self) -> int:
+        """Return the current position of cover."""
+        # allows using parent class with no other alterations
+        return CLOSED_POSITION
+
+    @property
+    def transition_steps(self) -> int:
+        """Return the steps to make a move."""
+        return self.positions.tilt
+
+    @property
+    def is_closed(self) -> bool:
+        """Return if the cover is closed."""
+        return self.positions.tilt <= CLOSED_POSITION
+
 
 class PowerViewShadeTopDown(PowerViewShadeBase):
     """Representation of a shade that lowers from the roof to the floor.
@@ -581,7 +595,7 @@ class PowerViewShadeTDBUBottom(PowerViewShadeDualRailBase):
     ) -> None:
         """Initialize the shade."""
         super().__init__(coordinator, device_info, room_name, shade, name)
-        self._attr_unique_id = f"{self._shade.id}_bottom"
+        self._attr_unique_id = f"{self._attr_unique_id}_bottom"
 
     @callback
     def _clamp_cover_limit(self, target_hass_position: int) -> int:
@@ -618,7 +632,7 @@ class PowerViewShadeTDBUTop(PowerViewShadeDualRailBase):
     ) -> None:
         """Initialize the shade."""
         super().__init__(coordinator, device_info, room_name, shade, name)
-        self._attr_unique_id = f"{self._shade.id}_top"
+        self._attr_unique_id = f"{self._attr_unique_id}_top"
 
     @property
     def should_poll(self) -> bool:
@@ -726,7 +740,7 @@ class PowerViewShadeDualOverlappedCombined(PowerViewShadeDualOverlappedBase):
     ) -> None:
         """Initialize the shade."""
         super().__init__(coordinator, device_info, room_name, shade, name)
-        self._attr_unique_id = f"{self._shade.id}_combined"
+        self._attr_unique_id = f"{self._attr_unique_id}_combined"
 
     @property
     def is_closed(self) -> bool:
@@ -792,7 +806,7 @@ class PowerViewShadeDualOverlappedFront(PowerViewShadeDualOverlappedBase):
     ) -> None:
         """Initialize the shade."""
         super().__init__(coordinator, device_info, room_name, shade, name)
-        self._attr_unique_id = f"{self._shade.id}_front"
+        self._attr_unique_id = f"{self._attr_unique_id}_front"
 
     @property
     def should_poll(self) -> bool:
@@ -848,7 +862,7 @@ class PowerViewShadeDualOverlappedRear(PowerViewShadeDualOverlappedBase):
     ) -> None:
         """Initialize the shade."""
         super().__init__(coordinator, device_info, room_name, shade, name)
-        self._attr_unique_id = f"{self._shade.id}_rear"
+        self._attr_unique_id = f"{self._attr_unique_id}_rear"
 
     @property
     def should_poll(self) -> bool:
@@ -980,6 +994,11 @@ TYPE_TO_CLASSES = {
     ),
     10: (
         PowerViewShadeDualOverlappedCombinedTilt,
+        PowerViewShadeDualOverlappedFront,
+        PowerViewShadeDualOverlappedRear,
+    ),
+    11: (
+        PowerViewShadeDualOverlappedCombined,
         PowerViewShadeDualOverlappedFront,
         PowerViewShadeDualOverlappedRear,
     ),

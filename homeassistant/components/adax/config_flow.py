@@ -1,4 +1,5 @@
 """Config flow for Adax integration."""
+
 from __future__ import annotations
 
 import logging
@@ -129,7 +130,7 @@ class AdaxConfigFlow(ConfigFlow, domain=DOMAIN):
             async_get_clientsession(self.hass), account_id, password
         )
         if token is None:
-            _LOGGER.info("Adax: Failed to login to retrieve token")
+            _LOGGER.debug("Adax: Failed to login to retrieve token")
             errors["base"] = "cannot_connect"
             return self.async_show_form(
                 step_id="cloud",

@@ -1,4 +1,5 @@
 """Config flow to configure Xiaomi Miio."""
+
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -12,7 +13,6 @@ import voluptuous as vol
 
 from homeassistant.components import zeroconf
 from homeassistant.config_entries import (
-    SOURCE_REAUTH,
     ConfigEntry,
     ConfigFlow,
     ConfigFlowResult,
@@ -82,14 +82,7 @@ class OptionsFlowHandler(OptionsFlow):
                 not cloud_username or not cloud_password or not cloud_country
             ):
                 errors["base"] = "cloud_credentials_incomplete"
-                # trigger re-auth flow
-                self.hass.async_create_task(
-                    self.hass.config_entries.flow.async_init(
-                        DOMAIN,
-                        context={"source": SOURCE_REAUTH},
-                        data=self.config_entry.data,
-                    )
-                )
+                self.config_entry.async_start_reauth(self.hass)
 
             if not errors:
                 return self.async_create_entry(title="", data=user_input)
@@ -236,13 +229,15 @@ class XiaomiMiioFlowHandler(ConfigFlow, domain=DOMAIN):
                     step_id="cloud", data_schema=DEVICE_CLOUD_CONFIG, errors=errors
                 )
 
-            miio_cloud = MiCloud(cloud_username, cloud_password)
+            miio_cloud = await self.hass.async_add_executor_job(
+                MiCloud, cloud_username, cloud_password
+            )
             try:
                 if not await self.hass.async_add_executor_job(miio_cloud.login):
                     errors["base"] = "cloud_login_error"
             except MiCloudAccessDenied:
                 errors["base"] = "cloud_login_error"
-            except Exception:  # pylint: disable=broad-except
+            except Exception:
                 _LOGGER.exception("Unexpected exception in Miio cloud login")
                 return self.async_abort(reason="unknown")
 
@@ -255,7 +250,7 @@ class XiaomiMiioFlowHandler(ConfigFlow, domain=DOMAIN):
                 devices_raw = await self.hass.async_add_executor_job(
                     miio_cloud.get_devices, cloud_country
                 )
-            except Exception:  # pylint: disable=broad-except
+            except Exception:
                 _LOGGER.exception("Unexpected exception in Miio cloud get devices")
                 return self.async_abort(reason="unknown")
 
@@ -352,7 +347,7 @@ class XiaomiMiioFlowHandler(ConfigFlow, domain=DOMAIN):
         except SetupException:
             if self.model is None:
                 errors["base"] = "cannot_connect"
-        except Exception:  # pylint: disable=broad-except
+        except Exception:
             _LOGGER.exception("Unexpected exception in connect Xiaomi device")
             return self.async_abort(reason="unknown")
 

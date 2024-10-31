@@ -1,4 +1,5 @@
 """Support for Lutron Homeworks lights."""
+
 from __future__ import annotations
 
 import logging
@@ -14,8 +15,9 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from . import HomeworksData, HomeworksEntity
+from . import HomeworksData
 from .const import CONF_ADDR, CONF_CONTROLLER_ID, CONF_DIMMERS, CONF_RATE, DOMAIN
+from .entity import HomeworksEntity
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -27,17 +29,17 @@ async def async_setup_entry(
     data: HomeworksData = hass.data[DOMAIN][entry.entry_id]
     controller = data.controller
     controller_id = entry.options[CONF_CONTROLLER_ID]
-    devs = []
+    entities = []
     for dimmer in entry.options.get(CONF_DIMMERS, []):
-        dev = HomeworksLight(
+        entity = HomeworksLight(
             controller,
             controller_id,
             dimmer[CONF_ADDR],
             dimmer[CONF_NAME],
             dimmer[CONF_RATE],
         )
-        devs.append(dev)
-    async_add_entities(devs, True)
+        entities.append(entity)
+    async_add_entities(entities, True)
 
 
 class HomeworksLight(HomeworksEntity, LightEntity):
@@ -96,11 +98,6 @@ class HomeworksLight(HomeworksEntity, LightEntity):
         self._controller.fade_dim(
             float((level * 100.0) / 255.0), self._rate, 0, self._addr
         )
-
-    @property
-    def extra_state_attributes(self) -> dict[str, str]:
-        """Supported attributes."""
-        return {"homeworks_address": self._addr}
 
     @property
     def is_on(self) -> bool:

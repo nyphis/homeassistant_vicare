@@ -1,4 +1,5 @@
 """The Wolf SmartSet sensors."""
+
 from __future__ import annotations
 
 from wolf_comm.models import (
@@ -62,7 +63,7 @@ class WolfLinkSensor(CoordinatorEntity, SensorEntity):
         self._attr_unique_id = f"{device_id}:{wolf_object.parameter_id}"
         self._state = None
         self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, device_id)},
+            identifiers={(DOMAIN, str(device_id))},
             configuration_url="https://www.wolf-smartset.com/",
             manufacturer=MANUFACTURER,
         )

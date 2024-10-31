@@ -1,4 +1,5 @@
 """Support for Balboa Spa binary sensors."""
+
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -11,19 +12,20 @@ from homeassistant.components.binary_sensor import (
     BinarySensorEntity,
     BinarySensorEntityDescription,
 )
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN
+from . import BalboaConfigEntry
 from .entity import BalboaEntity
 
 
 async def async_setup_entry(
-    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
+    hass: HomeAssistant,
+    entry: BalboaConfigEntry,
+    async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the spa's binary sensors."""
-    spa: SpaClient = hass.data[DOMAIN][entry.entry_id]
+    spa = entry.runtime_data
     entities = [
         BalboaBinarySensorEntity(spa, description)
         for description in BINARY_SENSOR_DESCRIPTIONS
@@ -33,18 +35,11 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 
-@dataclass(frozen=True)
-class BalboaBinarySensorEntityDescriptionMixin:
-    """Mixin for required keys."""
+@dataclass(frozen=True, kw_only=True)
+class BalboaBinarySensorEntityDescription(BinarySensorEntityDescription):
+    """A class that describes Balboa binary sensor entities."""
 
     is_on_fn: Callable[[SpaClient], bool]
-
-
-@dataclass(frozen=True)
-class BalboaBinarySensorEntityDescription(
-    BinarySensorEntityDescription, BalboaBinarySensorEntityDescriptionMixin
-):
-    """A class that describes Balboa binary sensor entities."""
 
 
 BINARY_SENSOR_DESCRIPTIONS = (
